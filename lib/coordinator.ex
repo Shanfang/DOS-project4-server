@@ -1,34 +1,37 @@
 defmodule Coordinator do
     use GenServer
-    
+    @name SERVER
     ######################### client API ####################
-    def start_link do
-        GenServer.start_link(__MODULE__, %{}, [name: :coordinator])
+    #def start_link do
+    #    GenServer.start_link(__MODULE__, %{}, [name: :coordinator])
+    #end
+    def start_link(opts \\ []) do
+        GenServer.start_link(__MODULE__, %{}, opts ++ [name: SERVER])        
     end
 
     # userID is a string
     def register_account(userID) do
-        GenServer.call(coordinator, {:register_account, userID})        
+        GenServer.call(@name, {:register_account, userID})        
     end
 
-    def send_tweet(coordinator, tweet, userID) do
-        GenServer.cast(coordinator, {:process_tweet, tweet, userID})
+    def send_tweet(tweet, userID) do
+        GenServer.cast(@name, {:process_tweet, tweet, userID})
     end
 
-    def subscribe(coordinator, to_subscribe_ID, userID) do
-        GenServer.call(coordinator, {:subscribe, to_subscribe_ID, userID})        
+    def subscribe(to_subscribe_ID, userID) do
+        GenServer.call(@name, {:subscribe, to_subscribe_ID, userID})        
     end
 
-    def re_tweet(coordinator, tweet, userID) do
-        GenServer.call(coordinator, {:process_tweet, tweet, userID})
+    def re_tweet(tweet, userID) do
+        GenServer.call(@name, {:process_tweet, tweet, userID})
     end
 
-    def query_tweet(coordinator, query, userID) do
-        GenServer.call(coordinator, {:query_tweet, query, userID})        
+    def query_tweet(query, userID) do
+        GenServer.call(@name, {:query_tweet, query, userID})        
     end
 
-    def connect(coordinator, userID) do
-        GenServer.call(coordinator, {:connect, userID})                
+    def connect(userID) do
+        GenServer.call(@name, {:connect, userID})                
     end
 
     ######################### callbacks ####################
@@ -46,7 +49,7 @@ defmodule Coordinator do
     # insert userID to user_table if it has not registered, otherwise make no change to the table
     def handle_call({:register_account, userID}, _from, state) do
         case find_user(userID, state) do
-            {:ok, {followers_list, followings_list, tweets_list} ->
+            {:ok, {followers_list, followings_list, tweets_list}} ->
                 {:reply, userID, state} # already registered
             :error ->
                 user_table = state[:user_table]
@@ -66,26 +69,26 @@ defmodule Coordinator do
                             |> List.first # get a tuple {userID, followers_list, followings_list, tweets_list}
                             |> elem(1) # get the followers_list
         user_table = send_to_followers(tweet, state[:user_table], followers_list, length(followers_list))
-
-        case tweet_type(tweet) do
-            {:hash_tage, tag} ->
-                :ets.insert(state[:hash_tage_table], {tag, tweet})
-                state = %{state | hash_tage_table : hash_tage_table}
-            {:mention, mention} ->
-                :ets.insert(state[:mention_table], {mention, tweet})
-                state = %{state | hash_tage_table : hash_tage_table}             
-        end
-        new_state = %{state | user_table : user_table}
+        state = 
+            case tweet_type(tweet) do
+                {:hash_tage, tag} ->
+                    :ets.insert(state[:hash_tage_table], {tag, tweet})
+                    %{state | hash_tage_table: hash_tage_table}
+                {:mention, mention} ->
+                    :ets.insert(state[:mention_table], {mention, tweet})
+                    %{state | mention_table: mention_table}             
+            end
+        new_state = %{state | user_table: user_table}
         {:noreply, new_state}
     end
 
 
     def handle_call({:subscribe, to_subscribe_ID, userID}, _from, state) do
-        followings = :ets.lookup(state[:user_table], userID) |> List.first |> elem(1)
+        tuple = :ets.lookup(state[:user_table], userID)
         case find_user(to_subscribe_ID, state) do
             {:ok, followers_list, followings_list, tweets_list} ->
-                :ets.insert(state[:user_table], {userID, followers_list1, [to_subscribe_ID | followings_list1], tweets_list1})
-                :ets.insert(user_table, {to_subscribe_ID, [userID | followers_list2], followings_list2, tweets_list2})             
+                :ets.insert(state[:user_table], {userID, elem(tuple, 1), [to_subscribe_ID | elem(tuple, 2)], elem(tuple, 3)})
+                :ets.insert(state[:user_table], {to_subscribe_ID, [userID | followers_list], followings_list, tweets_list})             
             :error ->
                 IO.puts "Sorry, the user you are subscribing to does not exist."
         end
@@ -154,5 +157,8 @@ defmodule Coordinator do
     defp send_to_followers(tweet, user_table, followers_list, count) do
         user_table
     end
-    
+
+    defp tweet_type(tweet) do
+        {:no_match}
+    end
  end
