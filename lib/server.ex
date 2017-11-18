@@ -72,26 +72,18 @@ defmodule Server do
     @doc """
     Assuming the user is registered, so there is no need to check if the user exists in user_table
     """
-    def handle_cast({:process_tweet, tweet, userID}, state) do
-        user_table = update_tweets_list(tweet, state["user_table"], userID)
+    def handle_cast({:process_tweet, tweet, userID}, state) do        
+        user_tuple = :ets.lookup(:user_table, userID) |> List.first
+        :ets.insert(:user_table, {userID, elem(user_tuple, 1), elem(user_tuple, 2), [tweet | elem(user_tuple, 3)]})
         
-        followers_list = :ets.lookup(state["user_table"], userID) # get a list of tuples[{}]
-                            |> List.first # get a tuple {userID, followers_list, followings_list, tweets_list}
-                            |> elem(1) # get the followers_list
-        user_table = send_to_followers(tweet, state["user_table"], followers_list, length(followers_list))
-        state = 
-            case tweet_type(tweet) do
-                {:hash_tage, tag} ->
-                    hash_tage_table = state["hash_tage_table"]
-                    :ets.insert(hash_tage_table, {tag, tweet})
-                    %{state | "hash_tage_table" => hash_tage_table}
-                {:mention, mention} ->
-                    mention_table = state["mention_table"]       
-                    :ets.insert(mention_table, {mention, tweet})
-                    %{state | "mention_table" => mention_table}             
-            end
-        new_state = %{state | "user_table" => user_table}
-        {:noreply, new_state}
+        # prepend the tweet to each follower's tweets list
+        send_to_followers(tweet, elem(user_tuple, 1), length(elem(user_tuple, 1)))
+
+
+        
+        IO.puts "The updated user_table after inserting tweet for userID is " 
+        IO.inspect :ets.lookup(:user_table, userID)
+        {:noreply, state}
     end
 
     @doc """
@@ -107,10 +99,10 @@ defmodule Server do
             :error ->
                 IO.puts "Sorry, the user you are subscribing to does not exist."
         end
-        IO.puts "The updated user_table for userID is " 
+        IO.puts "The updated user_table for userID after subscribing is " 
         IO.inspect :ets.lookup(:user_table, userID)
 
-        IO.puts "The updated user_table for followingID is " 
+        IO.puts "The updated user_table for followingID after subscribing is " 
         IO.inspect :ets.lookup(:user_table, to_subscribe_ID)
         # TO IMPLEMENT ====> need to push to_subscribe_ID's tweets to userID  
         {:reply, userID, state}
@@ -134,27 +126,26 @@ defmodule Server do
         user_table
     end
 
-    defp send_to_followers(tweet, user_table, followers_list, count) when count > 0 do     
+    defp send_to_followers(tweet, followers_list, count) when count > 0 do     
         follower = List.first(followers_list)
 
         # delete from the front of the list
         followers_list = List.delete_at(followers_list, 0) 
 
-        # list of tuple[{}], then get the first tuple {follower, [], [], []}
-        value_tuple = :ets.lookup(user_table, follower) |> List.first 
+        # list of tuple of the form: {follower, [], [], []}
+        follower_tuple = :ets.lookup(:user_table, follower) |> List.first 
         
         # get follower's tweet list then prepend tweet to the list
-        tweets_list = elem(value_tuple, 3) 
-        tweets_list = [tweet | tweets_list]
-        :ets.insert(user_table,{follower, elem(value_tuple, 1), elem(value_tuple, 2), tweets_list})
-        send_to_followers(tweet, user_table, followers_list, count - 1)
+        :ets.insert(:user_table, {follower, elem(follower_tuple, 1), elem(follower_tuple, 2), [tweet | elem(follower_tuple, 3)]})
+        # recursively process the next follower
+        send_to_followers(tweet, followers_list, count - 1)
     end
     
-    defp send_to_followers(tweet, user_table, followers_list, count) do
-        user_table
+    defp send_to_followers(tweet, followers_list, count) do
+        :ok
     end
 
     defp tweet_type(tweet) do
-        {:no_match}
+        :no_match
     end
  end
