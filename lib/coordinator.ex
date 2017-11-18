@@ -11,7 +11,7 @@ defmodule Coordinator do
 
     # userID is a string
     def register_account(userID) do
-        GenServer.call(@name, {:register_account, userID})        
+        GenServer.call(@name, {:register_account, userID}, :infinity)        
     end
 
     def send_tweet(tweet, userID) do
@@ -19,7 +19,7 @@ defmodule Coordinator do
     end
 
     def subscribe(to_subscribe_ID, userID) do
-        GenServer.call(@name, {:subscribe, to_subscribe_ID, userID})        
+        GenServer.call(@name, {:subscribe, to_subscribe_ID, userID}, :infinity)        
     end
 
     def re_tweet(tweet, userID) do
@@ -38,12 +38,21 @@ defmodule Coordinator do
     
     # init the server with an empty table to store clients
     def init(%{}) do
-        state = %{"usertable" => nil, "hash_tage_table" => nil, "mention_table" => nil}
-        user_table = :ets.new(:user_table, [:named_table, protected: true, read_concurrency: true])
-        hash_tage_table = :ets.new(:hash_tage_table,[:named_table, protected: true, read_concurrency: true])
-        mention_table = :ets.new(:mention_table,[:named_table, protected: true, read_concurrency: true])
-        new_state = %{state | "usertable" => user_table, "hash_tage_table" => hash_tage_table, "mention_table" => mention_table}
-        {:ok, new_state}
+        #state = %{"usertable" => nil, "hash_tage_table" => nil, "mention_table" => nil}
+        #user_table = :ets.new(:user_table, [:named_table, protected: true, read_concurrency: true])
+        #hash_tage_table = :ets.new(:hash_tage_table,[:named_table, protected: true, read_concurrency: true])
+        #mention_table = :ets.new(:mention_table,[:named_table, protected: true, read_concurrency: true])
+        :ets.new(:user_table, [:set, :named_table, :public])
+        #:ets.new(:hash_tage_table,[:set, :named_table, :public])
+        #:ets.new(:mention_table,[:set, :named_table, :public])
+        #state = %{"usertable" => :user_table, "hash_tage_table" => :hash_tage_table, "mention_table" => :mention_table}
+        state = %{"usertable" => :user_table, "hash_tage_table" => %{}, "mention_table" => %{}}
+        
+        IO.puts "state after init is " 
+        IO.inspect state["usertable"]
+        
+        {:ok, state}
+        #{:ok, %{state |"usertable" => user_table, "hash_tage_table" => hash_tage_table, "mention_table" => mention_table}}
     end
 
     # insert userID to user_table if it has not registered, otherwise make no change to the table
@@ -61,7 +70,7 @@ defmodule Coordinator do
 
     @doc """
         Assuming the user is registered, so there is no need to check if the user exists in user_table
-    """
+    
     def handle_cast({:process_tweet, tweet, userID}, state) do
         user_table = update_tweets_list(tweet, state["user_table"], userID)
         
@@ -101,6 +110,7 @@ defmodule Coordinator do
         # TO IMPLEMENT ====> need to push to_subscribe_ID's tweets to userID  
         {:reply, userID, new_state}
     end
+    """
     @doc """
         First, check if the user is registered, if not, register it
         Otherwise, subscrib to designated user and make changes to user_table for both entries
@@ -128,7 +138,11 @@ defmodule Coordinator do
     ######################### helper functions ####################
 
     defp find_user(userID, state) do
-        case :ets.lookup(state["user_table"], userID) do
+        IO.inspect "user_table is " 
+        IO.inspect state["user_table"]
+        #case :ets.lookup(state["user_table"], userID) do
+        case :ets.lookup(:user_table, userID) do
+                
             [{^userID, followers_list, followings_list, tweets_list}] -> 
                 {:ok, followers_list, followings_list, tweets_list}
             [] -> 
