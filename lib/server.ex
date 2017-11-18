@@ -38,17 +38,17 @@ defmodule Server do
     
     # init the server with an empty table to store clients
     def init(%{}) do
-        state = %{hash_tage_table: %{}, mention_table: %{}}
+        state = %{hash_tag_table: %{}, mention_table: %{}}
         #user_table = :ets.new(:user_table, [:named_table, protected: true, read_concurrency: true])
-        #hash_tage_table = :ets.new(:hash_tage_table,[:named_table, protected: true, read_concurrency: true])
+        #hash_tag_table = :ets.new(:hash_tag_table,[:named_table, protected: true, read_concurrency: true])
         #mention_table = :ets.new(:mention_table,[:named_table, protected: true, read_concurrency: true])
         :ets.new(:user_table, [:set, :named_table, :public])
-        #:ets.new(:hash_tage_table,[:set, :named_table, :public])
-        #:ets.new(:mention_table,[:set, :named_table, :public])
-        #state = %{"usertable" => :user_table, "hash_tage_table" => :hash_tage_table, "mention_table" => :mention_table}
-        #state = %{"usertable" => :user_table, "hash_tage_table" => %{}, "mention_table" => %{}} 
+        :ets.new(:hash_tag_table,[:set, :named_table, :public])
+        :ets.new(:mention_table,[:set, :named_table, :public])
+        #state = %{"usertable" => :user_table, "hash_tag_table" => :hash_tag_table, "mention_table" => :mention_table}
+        #state = %{"usertable" => :user_table, "hash_tag_table" => %{}, "mention_table" => %{}} 
         {:ok, state}
-        #{:ok, %{state |"usertable" => user_table, "hash_tage_table" => hash_tage_table, "mention_table" => mention_table}}
+        #{:ok, %{state |"usertable" => user_table, "hash_tag_table" => hash_tag_table, "mention_table" => mention_table}}
     end
 
     @doc """
@@ -78,11 +78,24 @@ defmodule Server do
         
         # prepend the tweet to each follower's tweets list
         send_to_followers(tweet, elem(user_tuple, 1), length(elem(user_tuple, 1)))
-
-
+        case tweet_type(tweet) do
+            {:hash_tag, tag} ->
+                IO.puts "The hashtag is " <> tag             
+                :ets.insert(:hash_tag_table, {tag, tweet})
+                IO.puts "The hashtag table now is " 
+                IO.inspect :ets.lookup(:hash_tag_table, tag)                
+            {:mention, mention} ->
+                IO.puts "The mention is " <> mention                             
+                :ets.insert(:mention_table, {mention, tweet})   
+                IO.puts "The mention table now is " 
+                IO.inspect :ets.lookup(:mention_table, mention) 
+            :plain_tweet ->
+                IO.puts "This is a normal tweet"                            
+        end
         
         IO.puts "The updated user_table after inserting tweet for userID is " 
         IO.inspect :ets.lookup(:user_table, userID)
+
         {:noreply, state}
     end
 
@@ -146,6 +159,25 @@ defmodule Server do
     end
 
     defp tweet_type(tweet) do
-        :no_match
+        result = 
+            cond do
+                tweet =~ "#" ->
+                    hash_tag = 
+                    String.split(tweet, ~r{#}, parts: 2)
+                    |> List.last
+                    |> String.split(~r{\s}, trim: true)
+                    |> List.first
+                    {:hash_tag, hash_tag}
+                tweet =~ "@" ->
+                    mention = 
+                    String.split(tweet, ~r{@}, parts: 2)
+                    |> List.last
+                    |> String.split(~r{\s}, trim: true)
+                    |> List.first
+                    {:mention, mention}
+                true ->
+                    :plain_tweet
+            end
+        result
     end
  end
