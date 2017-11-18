@@ -38,7 +38,7 @@ defmodule Coordinator do
     
     # init the server with an empty table to store clients
     def init(%{}) do
-        #state = %{"usertable" => nil, "hash_tage_table" => nil, "mention_table" => nil}
+        state = %{hash_tage_table: %{}, mention_table: %{}}
         #user_table = :ets.new(:user_table, [:named_table, protected: true, read_concurrency: true])
         #hash_tage_table = :ets.new(:hash_tage_table,[:named_table, protected: true, read_concurrency: true])
         #mention_table = :ets.new(:mention_table,[:named_table, protected: true, read_concurrency: true])
@@ -46,26 +46,25 @@ defmodule Coordinator do
         #:ets.new(:hash_tage_table,[:set, :named_table, :public])
         #:ets.new(:mention_table,[:set, :named_table, :public])
         #state = %{"usertable" => :user_table, "hash_tage_table" => :hash_tage_table, "mention_table" => :mention_table}
-        state = %{"usertable" => :user_table, "hash_tage_table" => %{}, "mention_table" => %{}}
-        
-        IO.puts "state after init is " 
-        IO.inspect state["usertable"]
-        
+        #state = %{"usertable" => :user_table, "hash_tage_table" => %{}, "mention_table" => %{}} 
         {:ok, state}
         #{:ok, %{state |"usertable" => user_table, "hash_tage_table" => hash_tage_table, "mention_table" => mention_table}}
     end
 
     # insert userID to user_table if it has not registered, otherwise make no change to the table
     def handle_call({:register_account, userID}, _from, state) do
-        case find_user(userID, state) do
-            {:ok, {followers_list, followings_list, tweets_list}} ->
-                {:reply, userID, state} # already registered
+        IO.puts "Current user_table is " 
+        IO.inspect :ets.lookup(:user_table, userID)
+        
+        case check_user_status(userID) do
+            :ok ->
+                IO.puts "This user is already registered, please try another one."
             :error ->
-                user_table = state["user_table"]
-                :ets.insert(user_table, {userID, [], [], []}) # register as a new user
-                new_state = %{state | "user_table" => user_table}
-                {:reply, userID, new_state}
+                :ets.insert(:user_table, {userID, [], [], []}) # register as a new user
         end
+        IO.puts "The updated user_table is " 
+        IO.inspect :ets.lookup(:user_table, userID)
+        {:reply, userID, state}
     end
 
     @doc """
@@ -137,14 +136,10 @@ defmodule Coordinator do
     """
     ######################### helper functions ####################
 
-    defp find_user(userID, state) do
-        IO.inspect "user_table is " 
-        IO.inspect state["user_table"]
-        #case :ets.lookup(state["user_table"], userID) do
-        case :ets.lookup(:user_table, userID) do
-                
-            [{^userID, followers_list, followings_list, tweets_list}] -> 
-                {:ok, followers_list, followings_list, tweets_list}
+    defp check_user_status(userID) do
+        case :ets.lookup(:user_table, userID) do              
+            [{^userID, _, _, _}] -> 
+                :ok
             [] -> 
                 :error
         end
