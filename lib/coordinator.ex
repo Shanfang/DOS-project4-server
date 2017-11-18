@@ -91,25 +91,27 @@ defmodule Coordinator do
         new_state = %{state | "user_table" => user_table}
         {:noreply, new_state}
     end
-
+"""
 
     def handle_call({:subscribe, to_subscribe_ID, userID}, _from, state) do
-        user_table = state["user_table"]
-        tuple = :ets.lookup(user_table, userID)
-        case find_user(to_subscribe_ID, state) do
-            {:ok, followers_list, followings_list, tweets_list} ->
-                :ets.insert(user_table, {userID, elem(tuple, 1), [to_subscribe_ID | elem(tuple, 2)], elem(tuple, 3)})
-                :ets.insert(user_table, {to_subscribe_ID, [userID | followers_list], followings_list, tweets_list})             
+        user_tuple = :ets.lookup(:user_table, userID) |> List.first
+        case check_user_status(to_subscribe_ID) do
+            :ok ->
+                following_tuple = :ets.lookup(:user_table, to_subscribe_ID) |> List.first
+                :ets.insert(:user_table, {userID, elem(user_tuple, 1), [to_subscribe_ID | elem(user_tuple, 2)], elem(user_tuple, 3)})
+                :ets.insert(:user_table, {to_subscribe_ID, [userID | elem(following_tuple, 1)], elem(following_tuple, 2), elem(following_tuple, 3)})             
             :error ->
                 IO.puts "Sorry, the user you are subscribing to does not exist."
         end
+        IO.puts "The updated user_table for userID is " 
+        IO.inspect :ets.lookup(:user_table, userID)
 
-        new_state = %{state | "user_table" => user_table}
-        
+        IO.puts "The updated user_table for followingID is " 
+        IO.inspect :ets.lookup(:user_table, to_subscribe_ID)
         # TO IMPLEMENT ====> need to push to_subscribe_ID's tweets to userID  
-        {:reply, userID, new_state}
+        {:reply, userID, state}
     end
-    """
+    
     @doc """
         First, check if the user is registered, if not, register it
         Otherwise, subscrib to designated user and make changes to user_table for both entries
