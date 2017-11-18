@@ -38,11 +38,11 @@ defmodule Coordinator do
     
     # init the server with an empty table to store clients
     def init(%{}) do
-        state = %{usertable: nil, hash_tage_table: nil, mention_table: nil}
+        state = %{"usertable" => nil, "hash_tage_table" => nil, "mention_table" => nil}
         user_table = :ets.new(:user_table, [:named_table, protected: true, read_concurrency: true])
         hash_tage_table = :ets.new(:hash_tage_table,[:named_table, protected: true, read_concurrency: true])
         mention_table = :ets.new(:mention_table,[:named_table, protected: true, read_concurrency: true])
-        new_state = %{state | user_table: user_table, hash_tage_table: hash_tage_table, mention_table: mention_table}
+        new_state = %{state | "usertable" => user_table, "hash_tage_table" => hash_tage_table, "mention_table" => mention_table}
         {:ok, new_state}
     end
 
@@ -52,9 +52,9 @@ defmodule Coordinator do
             {:ok, {followers_list, followings_list, tweets_list}} ->
                 {:reply, userID, state} # already registered
             :error ->
-                user_table = state[:user_table]
+                user_table = state["user_table"]
                 :ets.insert(user_table, {userID, [], [], []}) # register as a new user
-                new_state = %{state | user_table: user_table}
+                new_state = %{state | "user_table" => user_table}
                 {:reply, userID, new_state}
         end
     end
@@ -63,39 +63,44 @@ defmodule Coordinator do
         Assuming the user is registered, so there is no need to check if the user exists in user_table
     """
     def handle_cast({:process_tweet, tweet, userID}, state) do
-        user_table = update_tweets_list(tweet, state[:user_table], userID)
+        user_table = update_tweets_list(tweet, state["user_table"], userID)
         
-        followers_list = :ets.lookup(state[:user_table], userID) # get a list of tuples[{}]
+        followers_list = :ets.lookup(state["user_table"], userID) # get a list of tuples[{}]
                             |> List.first # get a tuple {userID, followers_list, followings_list, tweets_list}
                             |> elem(1) # get the followers_list
-        user_table = send_to_followers(tweet, state[:user_table], followers_list, length(followers_list))
+        user_table = send_to_followers(tweet, state["user_table"], followers_list, length(followers_list))
         state = 
             case tweet_type(tweet) do
                 {:hash_tage, tag} ->
-                    :ets.insert(state[:hash_tage_table], {tag, tweet})
-                    %{state | hash_tage_table: hash_tage_table}
+                    hash_tage_table = state["hash_tage_table"]
+                    :ets.insert(hash_tage_table, {tag, tweet})
+                    %{state | "hash_tage_table" => hash_tage_table}
                 {:mention, mention} ->
-                    :ets.insert(state[:mention_table], {mention, tweet})
-                    %{state | mention_table: mention_table}             
+                    mention_table = state["mention_table"]       
+                    :ets.insert(mention_table, {mention, tweet})
+                    %{state | "mention_table" => mention_table}             
             end
-        new_state = %{state | user_table: user_table}
+        new_state = %{state | "user_table" => user_table}
         {:noreply, new_state}
     end
 
 
     def handle_call({:subscribe, to_subscribe_ID, userID}, _from, state) do
-        tuple = :ets.lookup(state[:user_table], userID)
+        user_table = state["user_table"]
+        tuple = :ets.lookup(user_table, userID)
         case find_user(to_subscribe_ID, state) do
             {:ok, followers_list, followings_list, tweets_list} ->
-                :ets.insert(state[:user_table], {userID, elem(tuple, 1), [to_subscribe_ID | elem(tuple, 2)], elem(tuple, 3)})
-                :ets.insert(state[:user_table], {to_subscribe_ID, [userID | followers_list], followings_list, tweets_list})             
+                :ets.insert(user_table, {userID, elem(tuple, 1), [to_subscribe_ID | elem(tuple, 2)], elem(tuple, 3)})
+                :ets.insert(user_table, {to_subscribe_ID, [userID | followers_list], followings_list, tweets_list})             
             :error ->
                 IO.puts "Sorry, the user you are subscribing to does not exist."
         end
+
+        new_state = %{state | "user_table" => user_table}
         
         # TO IMPLEMENT ====> need to push to_subscribe_ID's tweets to userID  
-        {:reply, userID, user_table}
-        end
+        {:reply, userID, new_state}
+    end
     @doc """
         First, check if the user is registered, if not, register it
         Otherwise, subscrib to designated user and make changes to user_table for both entries
@@ -123,7 +128,7 @@ defmodule Coordinator do
     ######################### helper functions ####################
 
     defp find_user(userID, state) do
-        case :ets.lookup(state[:user_table], userID) do
+        case :ets.lookup(state["user_table"], userID) do
             [{^userID, followers_list, followings_list, tweets_list}] -> 
                 {:ok, followers_list, followings_list, tweets_list}
             [] -> 
