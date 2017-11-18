@@ -2,14 +2,11 @@ defmodule Server do
     use GenServer
     @name SERVER
     ######################### client API ####################
-    #def start_link do
-    #    GenServer.start_link(__MODULE__, %{}, [name: :coordinator])
-    #end
+
     def start_link(opts \\ []) do
         GenServer.start_link(__MODULE__, :ok, opts ++ [name: SERVER])        
     end
 
-    # userID is a string
     def register_account(userID) do
         GenServer.call(@name, {:register_account, userID}, :infinity)        
     end
@@ -38,34 +35,22 @@ defmodule Server do
     
     # init the server with an empty table to store clients
     def init(:ok) do
-        #state = %{hash_tag_table: %{}, mention_table: %{}}
-        #user_table = :ets.new(:user_table, [:named_table, protected: true, read_concurrency: true])
-        #hash_tag_table = :ets.new(:hash_tag_table,[:named_table, protected: true, read_concurrency: true])
-        #mention_table = :ets.new(:mention_table,[:named_table, protected: true, read_concurrency: true])
         :ets.new(:user_table, [:set, :named_table, :public])
         :ets.new(:hash_tag_table,[:bag, :named_table, :public])
         :ets.new(:mention_table,[:bag, :named_table, :public])
-        #state = %{"usertable" => :user_table, "hash_tag_table" => :hash_tag_table, "mention_table" => :mention_table}
-        #state = %{"usertable" => :user_table, "hash_tag_table" => %{}, "mention_table" => %{}} 
         {:ok, :ok}
-        #{:ok, %{state |"usertable" => user_table, "hash_tag_table" => hash_tag_table, "mention_table" => mention_table}}
     end
 
     @doc """
     Insert userID to user_table if it has not registered, otherwise make no change to the table
     """
-    def handle_call({:register_account, userID}, _from, state) do
-        IO.puts "Current user_table is " 
-        IO.inspect :ets.lookup(:user_table, userID)
-        
+    def handle_call({:register_account, userID}, _from, state) do        
         case user_status(userID) do
             :ok ->
                 IO.puts "This user is already registered, please try another one."
             :error ->
                 :ets.insert(:user_table, {userID, [], [], []}) # register as a new user
         end
-        IO.puts "The updated user_table is " 
-        IO.inspect :ets.lookup(:user_table, userID)
         {:reply, userID, state}
     end
 
@@ -75,27 +60,16 @@ defmodule Server do
     def handle_cast({:send_tweet, tweet, userID}, state) do        
         user_tuple = :ets.lookup(:user_table, userID) |> List.first
         :ets.insert(:user_table, {userID, elem(user_tuple, 1), elem(user_tuple, 2), [tweet | elem(user_tuple, 3)]})
-        
+   
         # prepend the tweet to each follower's tweets list
         send_to_followers(tweet, elem(user_tuple, 1), length(elem(user_tuple, 1)))
         case tweet_type(tweet) do
             {:hash_tag, tag} ->
-                IO.puts "The hashtag is " <> tag             
                 :ets.insert(:hash_tag_table, {tag, tweet})
-                IO.puts "The hashtag table now is " 
-                IO.inspect :ets.lookup(:hash_tag_table, tag)                
             {:mention, mention} ->
-                IO.puts "The mention is " <> mention                             
                 :ets.insert(:mention_table, {mention, tweet})   
-                IO.puts "The mention table now is " 
-                IO.inspect :ets.lookup(:mention_table, mention) 
             :plain_tweet ->
-                IO.puts "This is a normal tweet"                            
-        end
-        
-        IO.puts "The updated user_table after inserting tweet for userID is " 
-        IO.inspect :ets.lookup(:user_table, userID)
-
+        end       
         {:noreply, state}
     end
 
@@ -112,20 +86,23 @@ defmodule Server do
             :error ->
                 IO.puts "Sorry, the user you are subscribing to does not exist."
         end
-        IO.puts "The updated user_table for userID after subscribing is " 
-        IO.inspect :ets.lookup(:user_table, userID)
-
-        IO.puts "The updated user_table for followingID after subscribing is " 
-        IO.inspect :ets.lookup(:user_table, to_subscribe_ID)
-        # TO IMPLEMENT ====> need to push to_subscribe_ID's tweets to userID  
         {:reply, userID, state}
     end
     
+    @doc """
+    Handle three types of query:
+    1. #sometopic
+    2. @someone
+    3. subscription
+    The default ordering follows the above order, i.e., is a query contains #@gator, 
+    the query is default as # query. But this does not affect the result.
+    BTW, you can query all mentions, not only the tweet mentions you.
+    """
     def handle_call({:query_tweet, query, userID}, _from, state) do
         user_tuple = :ets.lookup(:user_table, userID) |> List.first
         result =
             case query_type(query) do
-                :subscribtion ->
+                :subscription ->
                     elem(user_tuple, 3)
                 {:hash_tag, hash_tag} ->
                     list1 = :ets.lookup(:hash_tag_table, hash_tag)
@@ -154,6 +131,10 @@ defmodule Server do
         user_table
     end
 
+    @doc """
+    Implement the push mechanism, so offline user get all subscribers' tweets without 
+    query the subscribers.
+    """
     defp send_to_followers(tweet, followers_list, count) when count > 0 do     
         follower = List.first(followers_list)
 
@@ -173,8 +154,10 @@ defmodule Server do
         :ok
     end
 
-    # this will match tweet of hashtag or mention type, with # comes first
-    # so if a tweet is "this is a test #@hi tweet", it is matched as hashtag tweet
+    @doc """
+    This will match tweet of hashtag or mention type, with # comes first
+    So if a tweet is "this is a test #@hi tweet", it is matched as hashtag tweet
+    """
     defp tweet_type(tweet) do
         result = 
             cond do
@@ -195,7 +178,6 @@ defmodule Server do
                 true ->
                     :plain_tweet
             end
-        #result
     end
 
 
@@ -207,13 +189,13 @@ defmodule Server do
                 String.contains?(query, "@") ->
                     {:mention, String.slice(query, 1..(String.length(query) - 1))}
                 true ->
-                    :subscribtion
+                    :subscription
             end  
     end
 
     @doc """
     defp query_type(query) do
-        result = [:subscribtion]
+        result = [:subscription]
         if String.contains?(query, "#") do
             result = [:hash_tag | result]
         end
@@ -223,8 +205,11 @@ defmodule Server do
         result
     end
     """
-
-    # change [{"h", "hi"}, {"h", "hello"}, {"h", "how"}] to ["hi", "hello", "how"]
+    
+    @doc """
+    Change [{"h", "hi"}, {"h", "hello"}, {"h", "how"}] to ["hi", "hello", "how"].
+    This can be done using erlang's foldl(), I'll update it later on.
+    """
     defp form_list(tuple_list, result_list, count)  when count > 0 do
         tweet = tuple_list 
                 |>List.first 
