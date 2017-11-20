@@ -7,6 +7,10 @@ defmodule Server do
         GenServer.start_link(__MODULE__, :ok, opts ++ [name: SERVER])        
     end
 
+    def connect(userID) do
+        GenServer.call(@name, {:connect, userID}, :infinity)                
+    end
+
     def register_account(userID) do
         GenServer.call(@name, {:register_account, userID}, :infinity)        
     end
@@ -39,6 +43,21 @@ defmodule Server do
         :ets.new(:hash_tag_table,[:bag, :named_table, :public])
         :ets.new(:mention_table,[:bag, :named_table, :public])
         {:ok, :ok}
+    end
+
+    @doc """
+    When a registered user is connected, push all tweets from his/her subscription
+    """
+    def handle_call({:connect, userID}, _from, state) do
+        tweets = 
+            case user_status(userID) do
+                :ok ->
+                    :ets.lookup(:user_table, userID) |> List.first |> elem(user_tuple, 3)
+                :error ->
+                    IO.puts "You are not registered, try it out now!"
+                    []
+            end
+        {:reply, tweets, state}       
     end
 
     @doc """
