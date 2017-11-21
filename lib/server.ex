@@ -47,7 +47,7 @@ defmodule Server do
 
     @doc """
     When a registered user is connected, push all tweets from his/her subscription
-    """
+
     def handle_call({:connect, userID}, _from, state) do
         tweets = 
             case user_status(userID) do
@@ -59,7 +59,7 @@ defmodule Server do
             end
         {:reply, tweets, state}       
     end
-
+    """
     @doc """
     Insert userID to user_table if it has not registered, otherwise make no change to the table
     """
@@ -103,7 +103,8 @@ defmodule Server do
                 :ets.insert(:user_table, {userID, elem(user_tuple, 1), [to_subscribe_ID | elem(user_tuple, 2)], elem(user_tuple, 3)})
                 :ets.insert(:user_table, {to_subscribe_ID, [userID | elem(following_tuple, 1)], elem(following_tuple, 2), elem(following_tuple, 3)})             
             :error ->
-                IO.puts "Sorry, the user you are subscribing to does not exist."
+                error_msg = "Sorry, the user << " <> to_subscribe_ID <> " >> that you are subscribing to does not exist."
+                IO.puts error_msg
         end
         {:reply, userID, state}
     end
