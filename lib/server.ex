@@ -7,9 +7,9 @@ defmodule Server do
         GenServer.start_link(__MODULE__, :ok, opts ++ [name: SERVER])        
     end
 
-    # def connect(userID) do
-    #     GenServer.call(@name, {:connect, userID}, :infinity)                
-    # end
+    def connect(userID) do
+        GenServer.call(@name, {:connect, userID}, :infinity)                
+    end
 
     def register_account(userID) do
         GenServer.call(@name, {:register_account, userID}, :infinity)        
@@ -24,16 +24,16 @@ defmodule Server do
     end
 
     def re_tweet(tweet, userID) do
-        GenServer.call(@name, {:process_tweet, tweet, userID})
+        GenServer.cast(@name, {:re_tweet, tweet, userID})
     end
 
     def query_tweet(query, userID) do
         GenServer.call(@name, {:query_tweet, query, userID}, :infinity)        
     end
 
-    def connect(userID) do
-        GenServer.call(@name, {:connect, userID})                
-    end
+    # def connect(userID) do
+    #     GenServer.call(@name, {:connect, userID})                
+    # end
 
     def stop(SERVER) do
         GenServer.stop(@name)
@@ -85,6 +85,25 @@ defmodule Server do
     Assuming the user is registered, so there is no need to check if the user exists in user_table
     """
     def handle_cast({:send_tweet, tweet, userID}, state) do        
+        user_tuple = :ets.lookup(:user_table, userID) |> List.first
+        :ets.insert(:user_table, {userID, elem(user_tuple, 1), elem(user_tuple, 2), [tweet | elem(user_tuple, 3)]})
+   
+        # prepend the tweet to each follower's tweets list
+        send_to_followers(tweet, elem(user_tuple, 1), length(elem(user_tuple, 1)))
+        case tweet_type(tweet) do
+            {:hash_tag, tag} ->
+                :ets.insert(:hash_tag_table, {tag, tweet})
+            {:mention, mention} ->
+                :ets.insert(:mention_table, {mention, tweet})   
+            :plain_tweet ->
+        end       
+        {:noreply, state}
+    end
+
+    @doc """
+    Handle user retweet.    
+    """
+    def handle_cast({:re_tweet, tweet, userID}, state) do        
         user_tuple = :ets.lookup(:user_table, userID) |> List.first
         :ets.insert(:user_table, {userID, elem(user_tuple, 1), elem(user_tuple, 2), [tweet | elem(user_tuple, 3)]})
    
